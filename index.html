@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Volleyball Pass Scout - Service-receive (pass) quality scouting on a tablet, with trajectory drawing, zone heat maps and a post-game report">
+  <title>Volleyball Pass Scout</title>
+
+  <!-- Modern Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- Top Navigation / Match Bar -->
+    <header class="top-nav">
+      <div class="match-info-group">
+        <div class="brand">
+          <img src="assets/icon-192.png" alt="Pass Scout Icon" class="brand-app-logo">
+          <span class="brand-name">PASS SCOUT</span>
+        </div>
+        <div class="match-pill" id="matchDisplayPill" title="Click to edit match settings">
+          <span class="match-team" id="displayTeamName">My Team</span>
+          <span class="match-vs">vs</span>
+          <span class="match-opp" id="displayOpponentName">Opponent</span>
+          <button class="icon-btn-subtle" id="openSetupBtn" title="Edit match & players" aria-label="Edit match and players">⚙️</button>
+        </div>
+        <div class="side-switch" id="sideSwitch" title="Which team's reception you are scouting">
+          <span class="side-switch-label">Receiving:</span>
+          <button class="side-btn" data-side="own" id="sideOwnBtn">My Team</button>
+          <button class="side-btn" data-side="opponent" id="sideOppBtn">Opponent</button>
+        </div>
+      </div>
+
+      <div class="nav-actions">
+        <button class="nav-btn subtle" id="toggleFullscreenBtn" title="Toggle Fullscreen Mode (Hides Browser Bar)">
+          <span class="btn-icon">⛶</span>
+        </button>
+        <button class="nav-btn" id="installAppBtn" title="Install as standalone tablet app" style="display: none; background: #0284c7; border-color: #38bdf8;">
+          <span class="btn-icon">📲</span> Install
+        </button>
+        <button class="nav-btn subtle" id="newGameBtn" title="Clear recorded passes and start a new game">
+          <span class="btn-icon">🏁</span> New Game
+        </button>
+        <button class="nav-btn" id="undoBtn" title="Undo last pass" disabled>
+          <span class="btn-icon">↩</span> Undo
+        </button>
+        <button class="nav-btn" id="filterBtn" title="Toggle trajectory display filters">
+          <span class="btn-icon">👁️</span> <span id="filterLabel">Current Passer</span>
+        </button>
+        <button class="nav-btn primary" id="openReportBtn" title="Post-game reception report">
+          <span class="btn-icon">📊</span> Report
+        </button>
+        <button class="nav-btn subtle" id="exportCsvBtn" title="Export scouting data to CSV">
+          <span class="btn-icon">📥</span> CSV
+        </button>
+        <button class="nav-btn subtle" id="importCsvBtn" title="Load existing CSV">
+          <span class="btn-icon">📂</span> Load
+        </button>
+        <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+      </div>
+    </header>
+
+    <!-- Main Workspace (Landscape Tablet Split: Court on Left, Scouting Controls on Right) -->
+    <main class="workspace-layout">
+      <!-- Court Canvas Area -->
+      <section class="court-section">
+        <div class="court-toolbar">
+          <div class="toolbar-left">
+            <span class="badge serve-direction-badge">
+              <span id="serveDirectionText">SERVE ➡️ RECEPTION</span>
+            </span>
+            <div class="court-hint" id="courtHintText">
+              👉 Tap behind the baseline where the server stands
+            </div>
+          </div>
+          <div class="toolbar-right">
+            <label class="toggle-control" title="Color the receiving zones by pass average">
+              <input type="checkbox" id="toggleHeatOverlay" checked>
+              <span class="toggle-track"></span>
+              <span class="toggle-text">Zone Heat</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="toggleZonesOverlay" checked>
+              <span class="toggle-track"></span>
+              <span class="toggle-text">Zones</span>
+            </label>
+            <label class="toggle-control" title="Service zone on the right, as seen from the other sideline">
+              <input type="checkbox" id="toggleFlipCourt">
+              <span class="toggle-track"></span>
+              <span class="toggle-text">Flip Court</span>
+            </label>
+            <button class="icon-btn-subtle" id="clearCurrentDraftBtn" title="Reset current drawing">✖ Clear</button>
+            <button class="icon-btn-subtle" id="open3DBtn" title="Fun 3D view of recorded serve trajectories">🧊 3D</button>
+          </div>
+        </div>
+
+        <div class="court-canvas-wrapper" id="courtCanvasWrapper">
+          <canvas id="courtCanvas"></canvas>
+          <div id="touchFeedbackMarker" class="touch-marker"></div>
+        </div>
+
+        <div class="court-legend">
+          <span class="legend-item"><span class="legend-color legend-perfect"></span> Perfect (3)</span>
+          <span class="legend-item"><span class="legend-color legend-good"></span> Good (2)</span>
+          <span class="legend-item"><span class="legend-color legend-notgood"></span> Not good (1)</span>
+          <span class="legend-item"><span class="legend-color legend-error"></span> Error (0)</span>
+          <span class="legend-item legend-note">Zone label: pass avg (number of passes)</span>
+        </div>
+      </section>
+
+      <!-- Sidebar Scouting Panel -->
+      <aside class="sidebar-panel">
+        <!-- Active Passer Bar -->
+        <div class="panel-card">
+          <div class="card-header">
+            <span class="card-title">PASSER (SELECT PLAYER)</span>
+            <span class="serve-counter" id="playerPassCountBadge">0 passes</span>
+          </div>
+          <div class="player-roster-grid" id="playerRosterGrid">
+            <!-- Dynamically populated roster numbers -->
+          </div>
+        </div>
+
+        <!-- Serve Type Selector -->
+        <div class="panel-card">
+          <div class="card-header">
+            <span class="card-title">SERVE TYPE (SERVING TEAM)</span>
+          </div>
+          <div class="serve-type-grid" id="serveTypeGrid">
+            <button class="serve-type-btn active" data-type="Jump Float">
+              <span class="type-icon">⚡</span>
+              <span class="type-name">J. Float</span>
+            </button>
+            <button class="serve-type-btn" data-type="Float">
+              <span class="type-icon">💨</span>
+              <span class="type-name">Float</span>
+            </button>
+            <button class="serve-type-btn" data-type="Jump Topspin">
+              <span class="type-icon">🚀</span>
+              <span class="type-name">J. Topspin</span>
+            </button>
+            <button class="serve-type-btn" data-type="Topspin">
+              <span class="type-icon">🌀</span>
+              <span class="type-name">Topspin</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Pass Rating Buttons -->
+        <div class="panel-card outcome-card">
+          <div class="card-header">
+            <span class="card-title">RATE THE PASS</span>
+            <span class="draft-indicator" id="draftStatusIndicator">Waiting for trajectory...</span>
+          </div>
+          <div class="rating-actions-grid">
+            <button class="outcome-btn rating-btn rating-3" data-rating="3" disabled>
+              <span class="outcome-label">PERFECT</span>
+              <span class="outcome-sub">All options for setter</span>
+            </button>
+            <button class="outcome-btn rating-btn rating-2" data-rating="2" disabled>
+              <span class="outcome-label">GOOD</span>
+              <span class="outcome-sub">Limited options</span>
+            </button>
+            <button class="outcome-btn rating-btn rating-1" data-rating="1" disabled>
+              <span class="outcome-label">NOT GOOD</span>
+              <span class="outcome-sub">No quick attack possible</span>
+            </button>
+            <button class="outcome-btn rating-btn rating-0" data-rating="0" disabled>
+              <span class="outcome-label">ERROR</span>
+              <span class="outcome-sub">Ace / ball lost</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Passer Stats Card -->
+        <div class="panel-card prediction-card">
+          <div class="card-header">
+            <span class="card-title" id="statsCardTitle">PASSER STATS</span>
+            <span class="badge" id="statsConfidenceBadge">No Data</span>
+          </div>
+
+          <div class="prediction-body">
+            <div class="pass-avg-row">
+              <div class="pass-avg-block">
+                <span class="pass-avg-value" id="statAvgVal">–</span>
+                <span class="pass-avg-label">Pass avg</span>
+              </div>
+              <div class="pass-avg-block">
+                <span class="pass-avg-value small" id="statPositiveVal">–</span>
+                <span class="pass-avg-label">Positive</span>
+              </div>
+              <div class="pass-avg-block">
+                <span class="pass-avg-value small" id="statTeamAvgVal">–</span>
+                <span class="pass-avg-label">Team avg</span>
+              </div>
+            </div>
+
+            <div class="prob-bars-container" id="ratingBars">
+              <!-- Dynamically populated rating distribution bars -->
+            </div>
+
+            <div class="prediction-notes">
+              <span class="ai-spark">✨</span>
+              <span id="statNotesText">Select a passer and record passes to see their tendencies.</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Pre-Game / Team Setup Modal Dialog -->
+    <div class="modal-overlay" id="setupModal">
+      <div class="modal-card modal-card-lg">
+        <div class="modal-header">
+          <h2>🏐 Pre-Game Match Setup</h2>
+          <button class="icon-btn-close" id="closeSetupModalBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label for="teamNameInput">Your Team Name</label>
+              <input type="text" id="teamNameInput" placeholder="e.g. Dragons Volley" value="My Team">
+            </div>
+            <div class="form-group">
+              <label for="oppNameInput">Opponent Team Name</label>
+              <input type="text" id="oppNameInput" placeholder="e.g. Thunder Spikers" value="Opponent">
+            </div>
+          </div>
+
+          <!-- Touch-Friendly Player Selection Section -->
+          <div class="player-setup-section">
+            <div class="section-title-bar">
+              <label>Passers of</label>
+              <div class="side-switch setup-side-switch" id="setupSideSwitch">
+                <button type="button" class="side-btn" data-side="own">My Team</button>
+                <button type="button" class="side-btn" data-side="opponent">Opponent</button>
+              </div>
+              <span class="roster-count-badge" id="setupSelectedCountBadge">0 Selected</span>
+            </div>
+
+            <!-- Active Selected Player Chips -->
+            <div class="selected-chips-container" id="setupSelectedChips"></div>
+
+            <!-- Roster Presets & Quick Actions -->
+            <div class="preset-action-bar">
+              <span class="preset-label">Quick Presets:</span>
+              <button type="button" class="chip-preset-btn" id="presetRoster12Btn">1 – 12</button>
+              <button type="button" class="chip-preset-btn" id="presetRoster18Btn">1 – 18</button>
+              <button type="button" class="chip-preset-btn danger" id="presetClearBtn">Clear Roster</button>
+            </div>
+
+            <!-- Visual Jersey Number Toggle Grid (1 to 24) -->
+            <div class="jersey-picker-wrapper">
+              <div class="picker-header">Tap numbers to toggle roster inclusion:</div>
+              <div class="jersey-grid" id="setupNumberToggleGrid"></div>
+            </div>
+
+            <!-- Touch Numpad for Custom Numbers (0-99) -->
+            <div class="custom-numpad-box">
+              <div class="numpad-header">
+                <span>Add Custom Number (0-99)</span>
+                <span class="numpad-display" id="numpadDisplay">Typed: --</span>
+              </div>
+              <div class="touch-numpad-grid" id="numpadGrid">
+                <button type="button" class="numpad-btn" data-val="1">1</button>
+                <button type="button" class="numpad-btn" data-val="2">2</button>
+                <button type="button" class="numpad-btn" data-val="3">3</button>
+                <button type="button" class="numpad-btn" data-val="4">4</button>
+                <button type="button" class="numpad-btn" data-val="5">5</button>
+                <button type="button" class="numpad-btn" data-val="6">6</button>
+                <button type="button" class="numpad-btn" data-val="7">7</button>
+                <button type="button" class="numpad-btn" data-val="8">8</button>
+                <button type="button" class="numpad-btn" data-val="9">9</button>
+                <button type="button" class="numpad-btn action" id="numpadClearBtn">⌫</button>
+                <button type="button" class="numpad-btn" data-val="0">0</button>
+                <button type="button" class="numpad-btn primary" id="numpadAddBtn">+ Add</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="nav-btn" id="cancelSetupBtn">Cancel</button>
+          <button class="nav-btn primary" id="saveSetupBtn">Save & Start Scouting</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fun 3D Trajectory Viewer Modal (separate rendering, does not affect the 2D court) -->
+    <div class="modal-overlay" id="view3DModal">
+      <div class="modal-card view3d-card">
+        <div class="modal-header">
+          <h2>🧊 3D Serve Trajectories <span class="badge">Fun Preview</span></h2>
+          <button class="icon-btn-close" id="close3DModalBtn">&times;</button>
+        </div>
+        <div class="view3d-body">
+          <div class="view3d-canvas-wrapper" id="view3DCanvasWrapper">
+            <canvas id="court3DCanvas"></canvas>
+            <div class="view3d-hint">✋ Drag to rotate</div>
+          </div>
+          <div class="court-legend">
+            <span class="legend-item"><span class="legend-color legend-perfect"></span> Perfect</span>
+            <span class="legend-item"><span class="legend-color legend-good"></span> Good</span>
+            <span class="legend-item"><span class="legend-color legend-notgood"></span> Not good</span>
+            <span class="legend-item"><span class="legend-color legend-error"></span> Error</span>
+          </div>
+          <p class="view3d-disclaimer">✨ Flight arcs are a stylized estimate for fun - only the serve start and pass contact points are actually recorded, not the real curve of the serve.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post-Game Reception Report (outside #app so it prints on its own) -->
+  <div class="report-overlay" id="reportOverlay">
+    <div class="report-toolbar">
+      <span class="report-toolbar-title">📊 Reception Report</span>
+      <div class="report-toolbar-actions">
+        <button class="nav-btn primary" id="printReportBtn" title="Print or save as PDF">🖨️ Print / PDF</button>
+        <button class="nav-btn" id="downloadReportBtn" title="Download the report as a single HTML file to share">💾 Download</button>
+        <button class="nav-btn subtle" id="closeReportBtn">✖ Close</button>
+      </div>
+    </div>
+    <div class="report-scroll">
+      <div id="reportContent"></div>
+    </div>
+  </div>
+
+  <script src="js/analytics.js"></script>
+  <script src="js/court.js"></script>
+  <script src="js/court3d.js"></script>
+  <script src="js/report.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
